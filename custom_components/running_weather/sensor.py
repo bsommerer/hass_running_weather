@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 import logging
 from typing import Any
 
+from astral import LocationInfo
+from astral.sun import sun
 import homeassistant.util.dt as dt_util
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
 from homeassistant.const import ATTR_TEMPERATURE, CONF_NAME
 from homeassistant.core import HomeAssistant
@@ -27,6 +30,8 @@ from .const import (
     CONF_SCORING,
     CONF_WEIGHTS,
     DEFAULT_DAYLIGHT_BONUS_PERCENT,
+    CONF_DAYLIGHT_END,
+    CONF_DAYLIGHT_START,
     CONF_WEATHER_ENTITY,
     DEFAULT_SCORING_FUNCTIONS,
     DEFAULT_HOURLY_WINDOWS,
@@ -34,6 +39,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DEFAULT_WEIGHTS_PERCENT,
     DOMAIN,
+    SUPPORTED_METRICS,
 )
 
 # Configuration for YAML usage
@@ -91,6 +97,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_DAYLIGHT_BONUS, default=DEFAULT_DAYLIGHT_BONUS_PERCENT): vol.All(
             vol.Coerce(float), vol.Range(min=0, max=30)
         ),
+        vol.Optional(CONF_DAYLIGHT_START): cv.time,
+        vol.Optional(CONF_DAYLIGHT_END): cv.time,
     }
 )
 
@@ -135,6 +143,8 @@ class ScoreProfile:
     weights: dict[str, float]
     scoring: dict[str, str]
     daylight_bonus: float
+    daylight_start: time | None
+    daylight_end: time | None
 
     def metric_score(self, metric: str, bounds: MetricBounds, value: float | None) -> float:
         if value is None:
@@ -153,11 +163,27 @@ def _normalize_weights(raw: dict[str, float]) -> dict[str, float]:
     return {key: max(0.0, val) / total for key, val in merged.items()}
 
 
+def _parse_time(value: Any) -> time | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, time):
+        return value
+    return dt_util.parse_time(str(value))
+
+
 def _build_score_profile(config: ConfigType) -> ScoreProfile:
     weights = _normalize_weights(config.get(CONF_WEIGHTS, {}))
     scoring = {**DEFAULT_SCORING_FUNCTIONS, **config.get(CONF_SCORING, {})}
     daylight_bonus = config.get(CONF_DAYLIGHT_BONUS, DEFAULT_DAYLIGHT_BONUS_PERCENT)
-    return ScoreProfile(weights=weights, scoring=scoring, daylight_bonus=daylight_bonus)
+    daylight_start = _parse_time(config.get(CONF_DAYLIGHT_START))
+    daylight_end = _parse_time(config.get(CONF_DAYLIGHT_END))
+    return ScoreProfile(
+        weights=weights,
+        scoring=scoring,
+        daylight_bonus=daylight_bonus,
+        daylight_start=daylight_start,
+        daylight_end=daylight_end,
+    )
 
 
 class RunningWeatherCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -191,10 +217,12 @@ class RunningWeatherCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         parsed_forecast = _normalize_forecast(raw_forecast, self.hours_to_inspect)
         baseline = _build_baseline(parsed_forecast)
-        forecast_scores = _score_forecast(parsed_forecast, baseline, self.score_profile)
+        forecast_scores = _score_forecast(
+            parsed_forecast, baseline, self.score_profile, self.hass
+        )
         now = dt_util.utcnow()
         current_snapshot = _build_current_snapshot(
-            state, forecast_scores, baseline, self.score_profile, now
+            state, forecast_scores, baseline, self.score_profile, self.hass, now
         )
 
         return {
@@ -319,12 +347,39 @@ def _build_baseline(forecast: list[dict[str, Any]]) -> dict[str, MetricBounds]:
     }
 
 
-def _is_daytime(moment: datetime) -> bool:
+def _get_daylight_window(moment: datetime, hass: HomeAssistant, profile: ScoreProfile):
+    local_moment = dt_util.as_local(moment)
+
+    if profile.daylight_start and profile.daylight_end:
+        start = datetime.combine(local_moment.date(), profile.daylight_start, tzinfo=local_moment.tzinfo)
+        end = datetime.combine(local_moment.date(), profile.daylight_end, tzinfo=local_moment.tzinfo)
+        if start >= end:
+            return None, None
+        return dt_util.as_utc(start), dt_util.as_utc(end)
+
+    if hass.config.latitude is None or hass.config.longitude is None:
+        return None, None
+
+    location = LocationInfo(
+        name="home",
+        region="home",
+        timezone=hass.config.time_zone or str(dt_util.DEFAULT_TIME_ZONE),
+        latitude=hass.config.latitude,
+        longitude=hass.config.longitude,
+    )
+    solar = sun(location.observer, date=local_moment.date(), tzinfo=location.timezone)
+    return solar.get("sunrise"), solar.get("sunset")
+
+
+def _is_daytime(moment: datetime, hass: HomeAssistant, profile: ScoreProfile) -> bool:
+    sunrise, sunset = _get_daylight_window(moment, hass, profile)
+    if sunrise and sunset:
+        return sunrise <= moment <= sunset
     return 6 <= moment.hour <= 21
 
 
 def _score_forecast(
-    forecast: list[dict[str, Any]], baseline: dict[str, MetricBounds], profile: ScoreProfile
+    forecast: list[dict[str, Any]], baseline: dict[str, MetricBounds], profile: ScoreProfile, hass: HomeAssistant
 ) -> list[dict[str, Any]]:
     scored: list[dict[str, Any]] = []
 
@@ -336,7 +391,7 @@ def _score_forecast(
         condition = str(entry.get("condition") or "").lower()
         sunshine = entry.get("sunshine")
         ground = entry.get("ground")
-        daylight_bonus = (profile.daylight_bonus / 100.0) if _is_daytime(entry["datetime"]) else 0.0
+        daylight_bonus = (profile.daylight_bonus / 100.0) if _is_daytime(entry["datetime"], hass, profile) else 0.0
 
         temp_score = profile.metric_score("temperature", baseline["temperature"], temp) or 0.0
         humidity_score = profile.metric_score("humidity", baseline["humidity"], humidity) or 0.0
@@ -421,6 +476,7 @@ def _build_current_snapshot(
     forecast_scores: list[dict[str, Any]],
     baseline: dict[str, MetricBounds],
     profile: ScoreProfile,
+    hass: HomeAssistant,
     now: datetime,
 ) -> dict[str, Any]:
     # Prefer the forecast slot closest to now for consistency
@@ -485,7 +541,9 @@ def _build_current_snapshot(
             + (sunshine_score or 0.0) * profile.weights["sunshine"]
             + (ground_score or 0.0) * profile.weights["ground"]
         )
-        daylight_bonus = profile.daylight_bonus / 100.0 if _is_daytime(now) else 0.0
+        daylight_bonus = (
+            profile.daylight_bonus / 100.0 if _is_daytime(now, hass, profile) else 0.0
+        )
         current_score = round((current_score + daylight_bonus) * 100, 1)
 
     return {
@@ -510,6 +568,27 @@ async def async_setup_platform(
     weather_entity = config[CONF_WEATHER_ENTITY]
     name = config[CONF_NAME]
     hours = config[CONF_HOURLY_WINDOWS]
+    score_profile = _build_score_profile(config)
+
+    coordinator = RunningWeatherCoordinator(
+        hass, weather_entity, hours, score_profile
+    )
+    await coordinator.async_refresh()
+    if not coordinator.last_update_success:
+        raise UpdateFailed("Initial Running Weather update failed")
+
+    async_add_entities([RunningWeatherSensor(coordinator, name)])
+
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    """Set up Running Weather from a config entry."""
+
+    config: dict[str, Any] = {**entry.data, **entry.options}
+    weather_entity = config[CONF_WEATHER_ENTITY]
+    name = config.get(CONF_NAME, DEFAULT_NAME)
+    hours = config.get(CONF_HOURLY_WINDOWS, DEFAULT_HOURLY_WINDOWS)
     score_profile = _build_score_profile(config)
 
     coordinator = RunningWeatherCoordinator(

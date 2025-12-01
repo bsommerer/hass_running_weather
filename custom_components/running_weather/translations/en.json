@@ -1,0 +1,44 @@
+{
+  "title": "Running Weather",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Running Weather",
+        "description": "Create a running-weather sensor using a weather forecast entity.",
+        "data": {
+          "name": "Name",
+          "weather_entity": "Weather entity",
+          "hourly_windows": "Forecast window (hours)"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tuning",
+        "description": "Adjust weighting, scoring functions and daylight bonus.",
+        "data": {
+          "weights": "Weights in percent (normalized automatically)",
+          "scoring": "Scoring strategy per metric",
+          "daylight_bonus": "Daylight bonus (%)",
+          "daylight_start": "Override daylight start",
+          "daylight_end": "Override daylight end"
+        }
+      }
+    },
+    "error": {
+      "invalid_weights": "Provide at least one weight greater than 0.",
+      "invalid_daylight_window": "Provide both start and end times for a custom daylight window."
+    }
+  },
+  "selector": {
+    "scoring_modes": {
+      "options": {
+        "relative_center": "Relative center (prefer mid-range values)",
+        "low_is_better": "Lower is better",
+        "high_is_better": "Higher is better"
+      }
+    }
+  }
+}

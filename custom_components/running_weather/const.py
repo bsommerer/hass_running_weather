@@ -7,6 +7,8 @@ CONF_HOURLY_WINDOWS = "hourly_windows"
 CONF_WEIGHTS = "weights"
 CONF_SCORING = "scoring"
 CONF_DAYLIGHT_BONUS = "daylight_bonus"
+CONF_DAYLIGHT_START = "daylight_start"
+CONF_DAYLIGHT_END = "daylight_end"
 DEFAULT_HOURLY_WINDOWS = 72
 DEFAULT_SCAN_INTERVAL_MINUTES = 30
 DEFAULT_WEIGHTS_PERCENT = {
@@ -37,3 +39,12 @@ CONDITION_PENALTIES = {
     "snowy-rainy": 0.25,
     "exceptional": 0.25,
 }
+
+SUPPORTED_METRICS = [
+    "temperature",
+    "humidity",
+    "wind_speed",
+    "precipitation",
+    "sunshine",
+    "ground",
+]
