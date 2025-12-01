@@ -1,0 +1,9 @@
+{
+  "domain": "running_weather",
+  "name": "Running Weather",
+  "documentation": "https://github.com/example/hass_running_weather",
+  "version": "0.1.0",
+  "codeowners": ["@example"],
+  "iot_class": "cloud_polling",
+  "requirements": []
+}

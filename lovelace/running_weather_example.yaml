@@ -1,0 +1,31 @@
+# Einfaches Lovelace-Widget für das Laufwetter
+# Nutzt die Entity `sensor.running_weather`, die von dieser Integration erzeugt wird.
+# Lege die Datei als Beispiel in deine UI-Konfiguration oder übernehme die Card-Einträge.
+type: vertical-stack
+cards:
+  - type: entity
+    entity: sensor.running_weather
+    name: Laufwetter jetzt
+    icon: mdi:run
+  - type: markdown
+    title: Beste Slots heute
+    content: >
+      {% set slots = state_attr('sensor.running_weather', 'best_today') or [] %}
+      {% if not slots %}
+      Keine Daten verfügbar. Stelle sicher, dass dein Wetterdienst Vorhersagedaten liefert.
+      {% else %}
+      {% for slot in slots %}
+      • **{{ as_timestamp(slot.time) | timestamp_custom('%H:%M') }}** – Score {{ slot.score }} | {{ slot.reason }}
+      {% endfor %}
+      {% endif %}
+  - type: markdown
+    title: Top-Slots in den nächsten 7 Tagen
+    content: >
+      {% set slots = state_attr('sensor.running_weather', 'best_week') or [] %}
+      {% if not slots %}
+      Keine Daten verfügbar.
+      {% else %}
+      {% for slot in slots %}
+      • **{{ as_timestamp(slot.time) | timestamp_custom('%a %H:%M') }}** – Score {{ slot.score }} | {{ slot.reason }}
+      {% endfor %}
+      {% endif %}
