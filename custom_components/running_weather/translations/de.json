@@ -1,0 +1,44 @@
+{
+  "title": "Running Weather",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Running Weather",
+        "description": "Erzeuge einen Laufwetter-Sensor auf Basis einer Wettervorhersage-Entity.",
+        "data": {
+          "name": "Name",
+          "weather_entity": "Wetter-Entity",
+          "hourly_windows": "Vorhersagefenster (Stunden)"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Feintuning",
+        "description": "Gewichtung, Bewertungsfunktionen und Tageslicht-Bonus anpassen.",
+        "data": {
+          "weights": "Gewichte in Prozent (werden automatisch normalisiert)",
+          "scoring": "Bewertungsstrategie je Faktor",
+          "daylight_bonus": "Tageslicht-Bonus (%)",
+          "daylight_start": "Tageslicht-Start überschreiben",
+          "daylight_end": "Tageslicht-Ende überschreiben"
+        }
+      }
+    },
+    "error": {
+      "invalid_weights": "Mindestens ein Gewicht muss größer als 0 sein.",
+      "invalid_daylight_window": "Bitte sowohl Start- als auch Endzeit für die Tageslichtphase angeben."
+    }
+  },
+  "selector": {
+    "scoring_modes": {
+      "options": {
+        "relative_center": "Relativ zum Mittelwert (bevorzugt Mittelwerte)",
+        "low_is_better": "Niedriger ist besser",
+        "high_is_better": "Höher ist besser"
+      }
+    }
+  }
+}
