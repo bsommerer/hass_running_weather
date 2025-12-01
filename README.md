@@ -19,6 +19,14 @@ Die Prozentwerte werden intern normalisiert, sodass du die Priorisierung in Proz
 Durch diese relative Betrachtung werden automatisch die bestmöglichen Slots im aktuellen Wetterumfeld hervorgehoben, auch wenn die Bedingungen insgesamt heiß/kühl oder windig sind.
 
 ## Installation
+
+### Über HACS (empfohlen)
+1. Füge in HACS unter **Integrations → Custom repositories** das Repository `https://github.com/example/hass_running_weather` mit Typ **Integration** hinzu.
+2. Suche in HACS nach **Running Weather** und installiere die Integration.
+3. Starte Home Assistant neu. Aktualisierungen kannst du anschließend direkt über HACS einspielen.
+
+### Manuell
+=======
 1. Kopiere den Ordner `custom_components/running_weather` in deinen `config/custom_components` Ordner von Home Assistant.
 2. Starte Home Assistant neu.
 
